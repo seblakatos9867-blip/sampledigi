@@ -1,0 +1,178 @@
+// ============================================================
+// SampleDigi Trade Predictor — TradingView Pine Script v6
+// Paste this into TradingView → Pine Script Editor → Add to chart
+// ============================================================
+//@version=6
+strategy(
+  title       = "SampleDigi Trade Predictor",
+  overlay     = true,
+  margin_long = 100,
+  margin_short= 100,
+  default_qty_type  = strategy.percent_of_equity,
+  default_qty_value = 10
+)
+
+// ── Inputs ──────────────────────────────────────────────────
+rsiLen      = input.int(14,  "RSI Length",         group="Indicators")
+rsiOB       = input.int(70,  "RSI Overbought",     group="Indicators")
+rsiOS       = input.int(30,  "RSI Oversold",       group="Indicators")
+macdFast    = input.int(12,  "MACD Fast",          group="Indicators")
+macdSlow    = input.int(26,  "MACD Slow",          group="Indicators")
+macdSig     = input.int(9,   "MACD Signal",        group="Indicators")
+emaShort    = input.int(9,   "EMA Short",          group="Trend")
+emaLong     = input.int(21,  "EMA Long",           group="Trend")
+sma50Len    = input.int(50,  "SMA 50",             group="Trend")
+bbLen       = input.int(20,  "BB Length",          group="Bollinger")
+bbMult      = input.float(2.0,"BB Std Dev",        group="Bollinger")
+volMult     = input.float(1.5,"Volume Spike ×",    group="Volume")
+atrLen      = input.int(14,  "ATR Length",         group="Risk")
+atrMult     = input.float(1.5,"ATR Stop Multiplier",group="Risk")
+minScore    = input.int(3,   "Min signal score to trade (1-5)", group="Risk", minval=1, maxval=5)
+
+// ── Indicators ───────────────────────────────────────────────
+// RSI
+rsiVal = ta.rsi(close, rsiLen)
+
+// MACD
+[macdLine, signalLine, hist] = ta.macd(close, macdFast, macdSlow, macdSig)
+
+// EMAs / SMA
+ema9  = ta.ema(close, emaShort)
+ema21 = ta.ema(close, emaLong)
+sma50 = ta.sma(close, sma50Len)
+
+// Bollinger Bands
+[bbLow, bbMid, bbHigh] = ta.bb(close, bbLen, bbMult)
+bbPct = (close - bbLow) / (bbHigh - bbLow) * 100
+
+// Volume
+volAvg  = ta.sma(volume, 20)
+highVol = volume > volAvg * volMult
+
+// ATR
+atrVal = ta.atr(atrLen)
+
+// Trend
+uptrend   = ema9 > ema21 and ema21 > sma50
+downtrend = ema9 < ema21 and ema21 < sma50
+
+// ── Signal scoring ───────────────────────────────────────────
+// Each condition scores +1 for BUY or -1 for SELL
+
+var float score = 0.0
+
+// RSI
+rsiScore  = rsiVal < rsiOS ? 1 : rsiVal > rsiOB ? -1 : 0
+
+// MACD crossover
+macdBull  = ta.crossover(macdLine, signalLine)  ? 1 : 0
+macdBear  = ta.crossunder(macdLine, signalLine) ? -1 : 0
+macdScore = macdBull + macdBear
+
+// Bollinger
+bbScore   = bbPct < 15 ? 1 : bbPct > 85 ? -1 : 0
+
+// EMA cross
+emaBull   = ta.crossover(ema9, ema21)   ? 1 : 0
+emaBear   = ta.crossunder(ema9, ema21)  ? -1 : 0
+emaScore  = emaBull + emaBear
+
+// Trend alignment
+trendScore = uptrend ? 1 : downtrend ? -1 : 0
+
+score := rsiScore + macdScore + bbScore + emaScore + trendScore
+
+// ── Entry / exit conditions ──────────────────────────────────
+buySignal  = score >=  minScore and highVol
+sellSignal = score <= -minScore and highVol
+
+// Stop-loss and take-profit
+longStop   = close - atrVal * atrMult
+longTP1    = close + atrVal * atrMult          // 1:1
+longTP2    = close + atrVal * atrMult * 2      // 1:2
+
+shortStop  = close + atrVal * atrMult
+shortTP1   = close - atrVal * atrMult
+shortTP2   = close - atrVal * atrMult * 2
+
+// ── Strategy orders ──────────────────────────────────────────
+if buySignal
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long",
+      stop  = longStop,
+      limit = longTP2)
+
+if sellSignal
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short",
+      stop  = shortStop,
+      limit = shortTP2)
+
+// ── Visuals ──────────────────────────────────────────────────
+// EMAs on chart
+plot(ema9,  "EMA 9",  color=color.new(color.aqua,   0), linewidth=1)
+plot(ema21, "EMA 21", color=color.new(color.orange,  0), linewidth=1)
+plot(sma50, "SMA 50", color=color.new(color.gray,    40), linewidth=2)
+
+// Bollinger Bands
+p1 = plot(bbHigh, "BB High", color=color.new(color.purple, 80))
+p2 = plot(bbLow,  "BB Low",  color=color.new(color.purple, 80))
+fill(p1, p2, color=color.new(color.purple, 92))
+
+// Buy / Sell labels
+plotshape(buySignal,  title="BUY",  style=shape.labelup,
+  location=location.belowbar, color=color.new(color.green, 0),
+  textcolor=color.white, text="BUY\n▲", size=size.normal)
+
+plotshape(sellSignal, title="SELL", style=shape.labeldown,
+  location=location.abovebar, color=color.new(color.red, 0),
+  textcolor=color.white, text="SELL\n▼", size=size.normal)
+
+// Score background highlight
+bgcolor(score >= minScore  ? color.new(color.green, 92) : na)
+bgcolor(score <= -minScore ? color.new(color.red,   92) : na)
+
+// ── Score panel (table) ───────────────────────────────────────
+var table scorePanel = table.new(position.top_right, 2, 7,
+  border_width=1, border_color=color.gray,
+  bgcolor=color.new(color.black, 70))
+
+if barstate.islast
+    table.cell(scorePanel, 0, 0, "Indicator",  text_color=color.gray,  text_size=size.small)
+    table.cell(scorePanel, 1, 0, "Signal",     text_color=color.gray,  text_size=size.small)
+
+    table.cell(scorePanel, 0, 1, "RSI",        text_color=color.white, text_size=size.small)
+    table.cell(scorePanel, 1, 1, str.tostring(rsiScore),
+      text_color = rsiScore > 0 ? color.green : rsiScore < 0 ? color.red : color.gray,
+      text_size=size.small)
+
+    table.cell(scorePanel, 0, 2, "MACD",       text_color=color.white, text_size=size.small)
+    table.cell(scorePanel, 1, 2, str.tostring(macdScore),
+      text_color = macdScore > 0 ? color.green : macdScore < 0 ? color.red : color.gray,
+      text_size=size.small)
+
+    table.cell(scorePanel, 0, 3, "Bollinger",  text_color=color.white, text_size=size.small)
+    table.cell(scorePanel, 1, 3, str.tostring(bbScore),
+      text_color = bbScore > 0 ? color.green : bbScore < 0 ? color.red : color.gray,
+      text_size=size.small)
+
+    table.cell(scorePanel, 0, 4, "EMA Cross",  text_color=color.white, text_size=size.small)
+    table.cell(scorePanel, 1, 4, str.tostring(emaScore),
+      text_color = emaScore > 0 ? color.green : emaScore < 0 ? color.red : color.gray,
+      text_size=size.small)
+
+    table.cell(scorePanel, 0, 5, "Trend",      text_color=color.white, text_size=size.small)
+    table.cell(scorePanel, 1, 5, str.tostring(trendScore),
+      text_color = trendScore > 0 ? color.green : trendScore < 0 ? color.red : color.gray,
+      text_size=size.small)
+
+    totalColor = score >= minScore ? color.green : score <= -minScore ? color.red : color.yellow
+    table.cell(scorePanel, 0, 6, "TOTAL",      text_color=color.white, text_size=size.small, text_font_face=font.family_monospace)
+    table.cell(scorePanel, 1, 6, str.tostring(score) + " / 5",
+      text_color=totalColor, text_size=size.small, text_font_face=font.family_monospace)
+
+// ── Alerts ───────────────────────────────────────────────────
+alertcondition(buySignal,  title="BUY Signal",
+  message="SampleDigi BUY — {{ticker}} score={{plot_0}} price={{close}}")
+alertcondition(sellSignal, title="SELL Signal",
+  message="SampleDigi SELL — {{ticker}} score={{plot_0}} price={{close}}")

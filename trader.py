@@ -6,18 +6,9 @@ import argparse
 import warnings
 warnings.filterwarnings("ignore")
 
-import os
-import requests
-import yfinance as yf
 import pandas as pd
 import numpy as np
-
-# Use requests (not curl_cffi) so the proxy CA bundle is respected
-_SESSION = requests.Session()
-_SESSION.verify = os.environ.get("SSL_CERT_FILE", True)
-_proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-if _proxy:
-    _SESSION.proxies = {"https": _proxy, "http": _proxy}
+from data import fetch
 
 try:
     from rich.console import Console
@@ -209,13 +200,15 @@ def overall_panel(ticker, sig):
     ov = sig["overall"]
     score = sig["score"]
     col = "green" if ov == "BUY" else "red" if ov == "SELL" else "yellow"
+    vol_str = "[bold cyan]HIGH[/]" if sig['high_volume'] else "normal"
+    trend_str = "↑ UP" if sig['trend'] == 'UP' else "↓ DOWN"
     body = (
         f"[bold {col}]{ov}[/]   (score {score:+d}/5)\n"
         f"Price: [bold]${sig['price']:.2f}[/]   "
         f"Open: ${sig['open']:.2f}   "
         f"Day: ${sig['day_low']:.2f} – ${sig['day_high']:.2f}\n"
-        f"Trend (SMA20 vs SMA50): [bold]{'↑ UP' if sig['trend']=='UP' else '↓ DOWN'}[/]   "
-        f"Volume ratio: {'[bold cyan]HIGH' if sig['high_volume'] else 'normal'}[/]  "
+        f"Trend (SMA20 vs SMA50): [bold]{trend_str}[/]   "
+        f"Volume ratio: {vol_str}  "
         f"({sig['vol_ratio']:.1f}×)"
     )
     return Panel(body, title=f"[bold]{ticker.upper()}[/]  Day-Trading Guidance", border_style=col)
@@ -291,8 +284,7 @@ def run(ticker, period="5d", interval="5m", account=10000):
     if RICH:
         console.print(f"[dim]Fetching {ticker.upper()} — {interval} bars, last {period}…[/]")
 
-    tk = yf.Ticker(ticker, session=_SESSION)
-    df = tk.history(period=period, interval=interval)
+    df = fetch(ticker, period=period, interval=interval)
     if df.empty:
         sys.exit(f"No data returned for '{ticker}'. Check the symbol.")
 
