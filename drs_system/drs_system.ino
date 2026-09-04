@@ -4,8 +4,8 @@ const int SWITCH_PIN = 2;   // Micro switch
 const int SERVO_PIN  = 9;   // Servo that tilts the flap
 const int LED_PIN    = 13;  // DRS active indicator
 
-const int FLAP_DOWN_ANGLE = 0;
-const int FLAP_UP_ANGLE   = 45;
+const int FLAP_DOWN_ANGLE = 45;
+const int FLAP_UP_ANGLE   = 0;
 
 Servo flapServo;
 
