@@ -18,12 +18,12 @@ void setup() {
 }
 
 void loop() {
-  // Switch pressed = LOW (pulled to ground)
+  // Switch pressed = LOW → wing goes UP
   if (digitalRead(SWITCH_PIN) == LOW) {
-    flapServo.write(FLAP_UP_ANGLE);
+    flapServo.write(FLAP_DOWN_ANGLE);
     digitalWrite(LED_PIN, HIGH);
   } else {
-    flapServo.write(FLAP_DOWN_ANGLE);
+    flapServo.write(FLAP_UP_ANGLE);
     digitalWrite(LED_PIN, LOW);
   }
 
